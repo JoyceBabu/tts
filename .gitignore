@@ -4,3 +4,6 @@
 *.ulaw
 *.alaw
 
+/SpeechSDK-linux.tar.gz
+/MicrosoftCognitiveServicesSpeech.xcframework.zip
+/speech-sdk/
