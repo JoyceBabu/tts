@@ -1,0 +1,74 @@
+#!/bin/bash
+
+set -e
+
+WORKING_DIR=/tmp/tts
+LOG_FILE=$WORKING_DIR/stdout.log
+
+[ ! -e $WORKING_DIR ] && mkdir -p $WORKING_DIR
+
+exec 1<>$LOG_FILE
+exec 2>&1
+set -x
+
+export GOOGLE_APPLICATION_CREDENTIALS=/etc/google-cloud-credentials.json
+export AZURE_API_KEY="ENTER_YOUR_API_KEY"
+export AZURE_REGION=centralindia
+
+voice=google/en-IN-Wavenet-A
+voice=azure/en-US-JennyMultilingualNeural
+file=-
+rate=16000
+
+while getopts "o:r:v:" arg; do
+  case $arg in
+    o)
+      file=$OPTARG
+      ;;
+    s)
+      rate=$OPTARG
+      ;;
+    v)
+      voice=$OPTARG
+      ;;
+  esac
+done
+
+engine=${voice%/*}
+voice=${voice#*/}
+
+if [ -t 0 ]; then
+    echo "ERROR: STDIN is not available"
+    exit 1
+fi
+
+text=`cat`
+
+# hash=`echo $voice $text | md5sum | awk '{print $1}'`
+hash=`crc32 <(echo $voice $text)`
+
+name=`echo $text | sed -E 's/[^[:alnum:]]+/_/g; s/^(.{,48}).*$/\1/' 2> /dev/null || echo "Test"`
+
+OUT_FILE="$WORKING_DIR/$name.$hash.wav"
+
+if [ ! -e "$OUT_FILE" ]; then
+    echo "Generating audio"
+    echo $text | /usr/local/bin/tts -e $engine -g f -r ${rate} -o ${OUT_FILE} -v ${voice} -f pcm -ssml -p -1
+fi
+
+# Sleep for 1 second to prevent audio from being cut off
+sleep 1
+if [ "$file" == "-" ]; then
+    cat $OUT_FILE
+else
+    cp $OUT_FILE $file
+fi
+touch -a $OUT_FILE
+
+# Delete files older than 30 days
+LAST_UPDATE_FILE=$WORKING_DIR/last-update.txt
+if [ ! -e $LAST_UPDATE_FILE ] || test "`find $LAST_UPDATE_FILE -mmin +60`"; then
+    echo "Clearing files older than 30 days"
+    find $WORKING_DIR -atime +30 -delete
+    touch $LAST_UPDATE_FILE
+fi
